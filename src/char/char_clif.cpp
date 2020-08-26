@@ -747,6 +747,13 @@ int chclif_parse_reqtoconnect(int fd, struct char_session_data* sd,uint32 ipl){
 			node->login_id2  == login_id2 /*&&
 			node->ip         == ipl*/ )
 		{// authentication found (coming from map server)
+#ifdef Pandas_Extract_SSOPacket_MacAddress
+			// 将 auth_db 中的 node 记录的 mac 和 lan 地址存入 session 中
+			// 因为很快这里的 node 就要从 auth_db 中被移除
+			// 注意: 此处的 fd 是指玩家客户端的连接序号 (而不是地图服务器的)
+			safestrncpy(session[fd]->mac_address, node->mac_address, MACADDRESS_LENGTH);
+			safestrncpy(session[fd]->lan_address, node->lan_address, IP4ADDRESS_LENGTH);
+#endif // Pandas_Extract_SSOPacket_MacAddress
 			idb_remove(auth_db, account_id);
 			char_auth_ok(fd, sd);
 		}
@@ -882,7 +889,13 @@ int chclif_parse_charselect(int fd, struct char_session_data* sd,uint32 ipl){
 		if (i < 0 || !cd->last_point.map) {
 			unsigned short j;
 			//First check that there's actually a map server online.
+#ifndef Pandas_Crashfix_Prevent_NullPointer
 			ARR_FIND( 0, ARRAYLENGTH(map_server), j, map_server[j].fd >= 0 && map_server[j].map[0] );
+#else
+			// 在一些极端情况下, 可能会出现地图服务器已经注册, 但地图列表还未送达的情况
+			// 此时若按照以前的写法去判断 map[0] 就会触发空指针崩溃, 此处改成更安全的方式来进行判断
+			ARR_FIND( 0, ARRAYLENGTH(map_server), j, map_server[j].fd >= 0 && !map_server[j].map.empty() );
+#endif // Pandas_Crashfix_Prevent_NullPointer
 			if (j == ARRAYLENGTH(map_server)) {
 				ShowInfo("Connection Closed. No map servers available.\n");
 				chclif_send_auth_result(fd,1); // 01 = Server closed
@@ -938,6 +951,12 @@ int chclif_parse_charselect(int fd, struct char_session_data* sd,uint32 ipl){
 		node->expiration_time = sd->expiration_time;
 		node->group_id = sd->group_id;
 		node->ip = ipl;
+#ifdef Pandas_Extract_SSOPacket_MacAddress
+		// 当玩家选择角色的时候会创建一个 auth_node 节点存入 auth_db 中
+		// 此时将 session 中记录的 mac 和 lan 地址复制一份到 auth_node 的记录中
+		safestrncpy(node->mac_address, session[fd]->mac_address, MACADDRESS_LENGTH);
+		safestrncpy(node->lan_address, session[fd]->lan_address, IP4ADDRESS_LENGTH);
+#endif // Pandas_Extract_SSOPacket_MacAddress
 		idb_put(auth_db, sd->account_id, node);
 
 	}
